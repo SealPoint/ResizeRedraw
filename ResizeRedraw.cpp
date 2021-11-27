@@ -176,11 +176,7 @@ BOOL InitInstance (HINSTANCE hInstance, int nCmdShow)
 void OnPaint (HWND hwnd, HDC hdc)
 {
 	RECT rect;
-    ::GetWindowRect(hwnd, &rect);
-	rect.left -= x;
-	rect.right -= x;
-	rect.top -= y;
-	rect.bottom -= y;
+    ::GetClientRect(hwnd, &rect);
 
 	if (hwnd == hWnd)
 	{
@@ -326,7 +322,10 @@ LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam)
 					rect.right = maxX + 1;
 					rect.top = 0;
 					rect.bottom = height;
+					std::stringstream str;
 					x = xx;
+					str << "X = " << x << std::endl;
+					::OutputDebugStringA(str.str().c_str());
 					::InvalidateRect(hWndMask, &rect, FALSE);
 				}
             }
