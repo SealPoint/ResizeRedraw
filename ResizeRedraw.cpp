@@ -255,7 +255,7 @@ void OnPaint (HWND hwnd, HDC hdc)
 		rect.top = 0;
 		rect.bottom = height;
 		::FillRect(hdc, &rect, ::CreateSolidBrush(RGB(255, 255, 0)));*/
-		::FillRgn(hdc, hRgnMask, ::CreateSolidBrush(RGB(255, 255, 0)));
+		::FillRgn(hdc, hRgnMask, hBackgroundBrush);
 	}
 	else
 	{
