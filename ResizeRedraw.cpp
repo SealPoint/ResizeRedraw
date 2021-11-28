@@ -42,16 +42,16 @@ HHOOK hMouseHook;
 bool resizing = false;
 
 // Forward declarations of functions included in this code module:
-ATOM				MyRegisterClass (HINSTANCE hInstance, TCHAR* szClassName, HBRUSH hBrush);
-BOOL				InitInstance(HINSTANCE, int);
+ATOM MyRegisterClass (HINSTANCE hInstance, TCHAR* szClassName, HBRUSH hBrush);
+BOOL InitInstance (HINSTANCE, int);
 HRGN CreateRectTopTwoCornersRoundedRegion (HDC hdc, int radius, int startX);
-LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK WndProc (HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam);
 
-int APIENTRY _tWinMain(HINSTANCE hInstance,
-                     HINSTANCE hPrevInstance,
-                     LPTSTR    lpCmdLine,
-                     int       nCmdShow)
+int APIENTRY _tWinMain (HINSTANCE hInstance,
+                        HINSTANCE hPrevInstance,
+                        LPTSTR lpCmdLine,
+                        int nCmdShow)
 {
 	UNREFERENCED_PARAMETER(hPrevInstance);
 	UNREFERENCED_PARAMETER(lpCmdLine);
@@ -69,7 +69,7 @@ int APIENTRY _tWinMain(HINSTANCE hInstance,
 	hDefaultCursor = ::LoadCursor(NULL, IDC_ARROW);
 	hSizeHorizCursor = ::LoadCursor(NULL, IDC_SIZEWE);
 	MyRegisterClass(hInstance, szWindowClass, hBackgroundBrush);
-	MyRegisterClass(hInstance, szMaskWindowClass, (HBRUSH)::GetStockObject(NULL_BRUSH));
+	MyRegisterClass(hInstance, szMaskWindowClass, (HBRUSH)::GetStockObject(NULL_BRUSH)); // transparent
 
 	// Perform application initialization:
 	if (!InitInstance (hInstance, nCmdShow))
@@ -112,14 +112,14 @@ ATOM MyRegisterClass (HINSTANCE hInstance, TCHAR* szClassName, HBRUSH hBrush)
 	WNDCLASSEX wcex = { 0 };
 
 	wcex.cbSize = sizeof(WNDCLASSEX);
-	wcex.lpszClassName	= szClassName;
-	wcex.hbrBackground =  hBrush; // transparent
-	wcex.lpfnWndProc	= WndProc;
-	wcex.hCursor		= hDefaultCursor;
-	wcex.style			= CS_HREDRAW | CS_VREDRAW;
-	wcex.cbClsExtra		= 0;
-	wcex.cbWndExtra		= 0;
-	wcex.hInstance		= hInstance;
+	wcex.lpszClassName = szClassName;
+	wcex.hbrBackground = hBrush;
+	wcex.lpfnWndProc = WndProc;
+	wcex.hCursor = hDefaultCursor;
+	wcex.style = CS_HREDRAW | CS_VREDRAW;
+	wcex.cbClsExtra	= 0;
+	wcex.cbWndExtra	= 0;
+	wcex.hInstance = hInstance;
 
 	return RegisterClassEx(&wcex);
 }
@@ -143,6 +143,24 @@ BOOL InitInstance (HINSTANCE hInstance, int nCmdShow)
 	height = WINDOW_HEIGHT;
 	screenWidth = ::GetSystemMetrics(SM_CXFULLSCREEN);
 	screenHeight = ::GetSystemMetrics(SM_CYFULLSCREEN);
+
+	hWnd = ::CreateWindow(szWindowClass,
+					      0, // no title
+					      WS_POPUP,
+					      x,
+					      y,
+					      width,
+					      height,
+					      NULL, // no parent window
+					      NULL, // no menu
+					      hInstance,
+					      0); // no extra param
+
+	if (!hWnd)
+	{
+		return FALSE;
+	}
+
 	HDC hScreenDC = ::GetDC(NULL); // Get screen DC
 	HDC hdc = ::GetDC(NULL);
 	hdcMemory = ::CreateCompatibleDC(hdc);
@@ -157,24 +175,6 @@ BOOL InitInstance (HINSTANCE hInstance, int nCmdShow)
 			 0,
 			 0,
 			 SRCCOPY);
-
-   hWnd = ::CreateWindow(szWindowClass,
-					     0, // no title
-					     WS_POPUP,
-					     x,
-					     y,
-					     width,
-					     height,
-					     NULL, // no parent window
-					     NULL, // no menu
-					     hInstance,
-					     0);
-
-	if (!hWnd)
-	{
-		return FALSE;
-	}
-
 	hRgn = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, 0);
 	::ReleaseDC(hWnd, hdc);
 	::SetWindowRgn(hWnd, hRgn, FALSE);
@@ -277,17 +277,14 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	RECT rect;
 	PAINTSTRUCT ps;
 	HDC hdc;
-	std::stringstream str;
-	str << message << std::endl;
-	::OutputDebugStringA(str.str().c_str());
+	//std::stringstream str;
+	//str << message << std::endl;
+	//::OutputDebugStringA(str.str().c_str());
 
 	switch (message)
 	{
-	case WM_NCHITTEST:
-    {
-		//if (hwnd == hWnd)
+		case WM_NCHITTEST:
 		{
-			//::GetWindowRect(hwnd, &rect);
 			int xx = GET_X_LPARAM(lParam) - x;
 			int yy = GET_Y_LPARAM(lParam) - y;
 
@@ -300,84 +297,89 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 			{
 				return HTLEFT;
 			}
-		}
 
-        return HTCLIENT;
-    }
-	case WM_SYSCOMMAND:
-	{
-		if (wParam == SC_SZLEFT)
+			return HTCLIENT;
+		}
+		case WM_SYSCOMMAND:
 		{
-			resizing = true;
-			::GetWindowRect(hwnd, &rect);
-			x = rect.left;
-			y = rect.top;
-			width = rect.right - rect.left;
-			height = rect.bottom - rect.top;
-			int bitmapX = 0;
-			int bitmapY = y;
-			int bitmapWidth = rect.right;
-			int bitmapHeight = rect.bottom - rect.top;
-
-			if (!hWndMask)
+			if (wParam == SC_SZLEFT)
 			{
-				hWndMask = ::CreateWindowEx(WS_EX_TOPMOST,
-										    szWindowClass,
-											0, // No title
-											WS_POPUP,
-											bitmapX,
-											bitmapY,
-											bitmapWidth,
-											bitmapHeight,
-											NULL, // no parent
-											NULL, // no menu
-											hInst,
-											0); // no param
+				resizing = true;
+				::GetWindowRect(hwnd, &rect);
+				x = rect.left;
+				y = rect.top;
+				width = rect.right - rect.left;
+				height = rect.bottom - rect.top;
+				int bitmapX = 0;
+				int bitmapY = y;
+				int bitmapWidth = rect.right;
+				int bitmapHeight = rect.bottom - rect.top;
+
+				if (!hWndMask)
+				{
+					hWndMask = ::CreateWindowEx(WS_EX_TOPMOST,
+												szWindowClass,
+												0, // No title
+												WS_POPUP,
+												bitmapX,
+												bitmapY,
+												bitmapWidth,
+												bitmapHeight,
+												NULL, // no parent
+												NULL, // no menu
+												hInst,
+												0); // no param
+				}
+				else
+				{
+					::MoveWindow(hWndMask,
+								 bitmapX,
+								 bitmapY,
+								 bitmapWidth,
+								 bitmapHeight,
+								 FALSE);
+				}
+
+				HDC hdc = ::GetDC(hWndMask);
+				hRgnMask = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, rect.left);
+				::ReleaseDC(hWndMask, hdc);
+
+				::ShowWindow(hWndMask, SW_SHOW);
+				::UpdateWindow(hWndMask);
+				hMouseHook = ::SetWindowsHookExA(WH_MOUSE_LL, MouseHookProc, 0, 0);
+
+				return 0;
 			}
-			else
-			{
-				::MoveWindow(hWndMask,
-							 bitmapX,
-							 bitmapY,
-							 bitmapWidth,
-							 bitmapHeight,
-							 FALSE);
-			}
 
-			HDC hdc = ::GetDC(hWndMask);
-			hRgnMask = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, rect.left);
-			::ReleaseDC(hWndMask, hdc);
-
-			::ShowWindow(hWndMask, SW_SHOW);
-			::UpdateWindow(hWndMask);
-			hMouseHook = ::SetWindowsHookExA(WH_MOUSE_LL, MouseHookProc, 0, 0);
-
-			return 0;
+			return DefWindowProc(hwnd, message, wParam, lParam);
 		}
-
-		return DefWindowProc(hwnd, message, wParam, lParam);
-	}
-	case WM_WINDOWPOSCHANGED:
-	{
-		if (hwnd == hWnd && !resizing)
+		case WM_WINDOWPOSCHANGED:
 		{
-			WINDOWPOS* winPos = (WINDOWPOS*)lParam;
-			x = winPos->x;
-			y = winPos->y;
-		}
+			if (hwnd == hWnd && !resizing)
+			{
+				WINDOWPOS* winPos = (WINDOWPOS*)lParam;
+				x = winPos->x;
+				y = winPos->y;
+			}
 
-		return DefWindowProc(hwnd, message, wParam, lParam);
-	}
-	case WM_PAINT:
-		hdc = BeginPaint(hwnd, &ps);
-		OnPaint(hwnd, hdc);
-		EndPaint(hwnd, &ps);
-		break;
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		break;
-	default:
-		return DefWindowProc(hwnd, message, wParam, lParam);
+			return DefWindowProc(hwnd, message, wParam, lParam);
+		}
+		case WM_PAINT:
+		{
+			hdc = BeginPaint(hwnd, &ps);
+			OnPaint(hwnd, hdc);
+			EndPaint(hwnd, &ps);
+			break;
+		}
+		case WM_DESTROY:
+		{
+			PostQuitMessage(0);
+			break;
+		}
+		default:
+		{
+			return DefWindowProc(hwnd, message, wParam, lParam);
+		}
 	}
 	return 0;
 }
@@ -422,9 +424,9 @@ LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam)
 					hRgnMask = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, x);
 					::ReleaseDC(hWndMask, hdc);
 					
-					std::stringstream str;
-					str << "X = " << x << std::endl;
-					::OutputDebugStringA(str.str().c_str());
+					//std::stringstream str;
+					//str << "X = " << x << std::endl;
+					//::OutputDebugStringA(str.str().c_str());
 					::InvalidateRect(hWndMask, &rect, FALSE);
 				}
             }
