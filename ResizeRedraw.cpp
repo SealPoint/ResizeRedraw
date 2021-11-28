@@ -19,12 +19,14 @@
 HINSTANCE hInst;								// current instance
 TCHAR szTitle[MAX_LOADSTRING];					// The title bar text
 TCHAR szWindowClass[MAX_LOADSTRING];			// the main window class name
+TCHAR szMaskWindowClass[MAX_LOADSTRING];
 
 HWND hWnd = 0;									// window handle
 HWND hWndMask = 0;								// Masking window handle
 HBITMAP hScreenBitmap;							// Screen capture 
 HBRUSH hBackgroundBrush;						// Background color brush
 HCURSOR hDefaultCursor;
+HCURSOR hSizeHorizCursor;
 int x;
 int y;
 int prevX, prevY;
@@ -37,9 +39,10 @@ int screenWidth;
 int screenHeight;
 HDC hdcMemory;
 HHOOK hMouseHook;
+bool resizing = false;
 
 // Forward declarations of functions included in this code module:
-ATOM				MyRegisterClass(HINSTANCE hInstance);
+ATOM				MyRegisterClass (HINSTANCE hInstance, TCHAR* szClassName, HBRUSH hBrush);
 BOOL				InitInstance(HINSTANCE, int);
 HRGN CreateRectTopTwoCornersRoundedRegion (HDC hdc, int radius, int startX);
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -60,7 +63,13 @@ int APIENTRY _tWinMain(HINSTANCE hInstance,
 	// Initialize global strings
 	LoadString(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
 	LoadString(hInstance, IDC_RESIZEREDRAW, szWindowClass, MAX_LOADSTRING);
-	MyRegisterClass(hInstance);
+	LoadString(hInstance, IDC_MASK_WINDOW, szMaskWindowClass, MAX_LOADSTRING);
+
+	hBackgroundBrush = ::CreateSolidBrush(RGB(118, 182, 252));
+	hDefaultCursor = ::LoadCursor(NULL, IDC_ARROW);
+	hSizeHorizCursor = ::LoadCursor(NULL, IDC_SIZEWE);
+	MyRegisterClass(hInstance, szWindowClass, hBackgroundBrush);
+	MyRegisterClass(hInstance, szMaskWindowClass, (HBRUSH)::GetStockObject(NULL_BRUSH));
 
 	// Perform application initialization:
 	if (!InitInstance (hInstance, nCmdShow))
@@ -98,18 +107,15 @@ int APIENTRY _tWinMain(HINSTANCE hInstance,
 //    so that the application will get 'well formed' small icons associated
 //    with it.
 //
-ATOM MyRegisterClass(HINSTANCE hInstance)
+ATOM MyRegisterClass (HINSTANCE hInstance, TCHAR* szClassName, HBRUSH hBrush)
 {
-	hBackgroundBrush = ::CreateSolidBrush(RGB(118, 182, 252));
-	hDefaultCursor = ::LoadCursor(NULL, IDC_ARROW);
-
 	WNDCLASSEX wcex = { 0 };
 
 	wcex.cbSize = sizeof(WNDCLASSEX);
-	wcex.lpszClassName	= szWindowClass;
-	wcex.hbrBackground =  (HBRUSH)::GetStockObject(NULL_BRUSH); // transparent
+	wcex.lpszClassName	= szClassName;
+	wcex.hbrBackground =  hBrush; // transparent
 	wcex.lpfnWndProc	= WndProc;
-	wcex.hCursor		= LoadCursor(NULL, IDC_ARROW);
+	wcex.hCursor		= hDefaultCursor;
 	wcex.style			= CS_HREDRAW | CS_VREDRAW;
 	wcex.cbClsExtra		= 0;
 	wcex.cbWndExtra		= 0;
@@ -182,9 +188,6 @@ BOOL InitInstance (HINSTANCE hInstance, int nCmdShow)
 //===================================================================================
 HRGN CreateRectTopTwoCornersRoundedRegion (HDC hdc, int radius, int startX)
 {
-	std::stringstream str;
-	str << "Width: " << width << std::endl;
-	::OutputDebugStringA(str.str().c_str());
     // Bracket begin a path 
     BeginPath(hdc);
 
@@ -236,8 +239,7 @@ void OnPaint (HWND hwnd, HDC hdc)
 
 	if (hwnd == hWnd)
 	{
-		//::SetBkMode(hdc, TRANSPARENT);
-		::FillRect(hdc, &rect, hBackgroundBrush);
+		//::FillRect(hdc, &rect, hBackgroundBrush);
 	}
 	else if (hwnd == hWndMask)
 	{
@@ -256,12 +258,8 @@ void OnPaint (HWND hwnd, HDC hdc)
 		rect.bottom = height;
 		::FillRect(hdc, &rect, ::CreateSolidBrush(RGB(255, 255, 0)));*/
 		::FillRgn(hdc, hRgnMask, hBackgroundBrush);
+		//::FillRect(hdc, &rect, ::CreateSolidBrush(RGB(255, 255, 0)));
 	}
-	else
-	{
-		::FillRect(hdc, &rect, ::CreateSolidBrush(RGB(0, 255, 0)));
-	}
-	//DrawBorder(hdc);
 }
 
 //
@@ -276,7 +274,7 @@ void OnPaint (HWND hwnd, HDC hdc)
 //
 LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	int wmId, wmEvent;
+	RECT rect;
 	PAINTSTRUCT ps;
 	HDC hdc;
 	std::stringstream str;
@@ -287,12 +285,21 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 	case WM_NCHITTEST:
     {
-		int xx = GET_X_LPARAM(lParam) - x;
-        int yy = GET_Y_LPARAM(lParam) - y;
-
-		if (xx <= WINDOW_BORDER_WIDTH)
+		//if (hwnd == hWnd)
 		{
-			return HTLEFT;
+			//::GetWindowRect(hwnd, &rect);
+			int xx = GET_X_LPARAM(lParam) - x;
+			int yy = GET_Y_LPARAM(lParam) - y;
+
+			if (yy <= CAPTION_HEIGHT)
+			{
+				return HTCAPTION;
+			}
+
+			if (xx <= WINDOW_BORDER_WIDTH)
+			{
+				return HTLEFT;
+			}
 		}
 
         return HTCLIENT;
@@ -301,13 +308,16 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		if (wParam == SC_SZLEFT)
 		{
-			prevX = x;
-			prevY = y;
-			
+			resizing = true;
+			::GetWindowRect(hwnd, &rect);
+			x = rect.left;
+			y = rect.top;
+			width = rect.right - rect.left;
+			height = rect.bottom - rect.top;
 			int bitmapX = 0;
 			int bitmapY = y;
-			int bitmapWidth = x + width;
-			int bitmapHeight = height;
+			int bitmapWidth = rect.right;
+			int bitmapHeight = rect.bottom - rect.top;
 
 			if (!hWndMask)
 			{
@@ -324,9 +334,18 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 											hInst,
 											0); // no param
 			}
+			else
+			{
+				::MoveWindow(hWndMask,
+							 bitmapX,
+							 bitmapY,
+							 bitmapWidth,
+							 bitmapHeight,
+							 FALSE);
+			}
 
 			HDC hdc = ::GetDC(hWndMask);
-			hRgnMask = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, x);
+			hRgnMask = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, rect.left);
 			::ReleaseDC(hWndMask, hdc);
 
 			::ShowWindow(hWndMask, SW_SHOW);
@@ -334,6 +353,17 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 			hMouseHook = ::SetWindowsHookExA(WH_MOUSE_LL, MouseHookProc, 0, 0);
 
 			return 0;
+		}
+
+		return DefWindowProc(hwnd, message, wParam, lParam);
+	}
+	case WM_WINDOWPOSCHANGED:
+	{
+		if (hwnd == hWnd && !resizing)
+		{
+			WINDOWPOS* winPos = (WINDOWPOS*)lParam;
+			x = winPos->x;
+			y = winPos->y;
 		}
 
 		return DefWindowProc(hwnd, message, wParam, lParam);
@@ -374,25 +404,27 @@ LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam)
                 if (::PtInRect(&rect, mouseHookInfo->pt))
                 {
 					//::OutputDebugStringA("Mouse Move\n");
-					
+					//::SetCursor(hSizeHorizCursor);
 					int xx = mouseHookInfo->pt.x;
 					width -= (xx - x);
 					int minX = min(x, xx);
 					int maxX = max(x, xx);
-					RECT rect;
+					
 					rect.left = minX - WINDOW_CORNER_RADIUS;
 					rect.right = maxX + WINDOW_CORNER_RADIUS;
 					rect.top = 0;
 					rect.bottom = height;
-					//std::stringstream str;
+					
 					x = xx;
 
 					HDC hdc = ::GetDC(hWndMask);
 					::DeleteRgn(hRgnMask);
 					hRgnMask = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, x);
 					::ReleaseDC(hWndMask, hdc);
-					//str << "X = " << x << std::endl;
-					//::OutputDebugStringA(str.str().c_str());
+					
+					std::stringstream str;
+					str << "X = " << x << std::endl;
+					::OutputDebugStringA(str.str().c_str());
 					::InvalidateRect(hWndMask, &rect, FALSE);
 				}
             }
@@ -402,11 +434,14 @@ LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam)
 				::DeleteRgn(hRgn);
 				hRgn = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, 0);
 				::ReleaseDC(hWnd, hdc);
-				::SetWindowRgn(hWnd, hRgn, TRUE);
+				::SetWindowRgn(hWnd, hRgn, FALSE);
 				::MoveWindow(hWnd, x, y, width, height, TRUE);
 				::UnhookWindowsHookEx(hMouseHook);
 				::SetCursor(hDefaultCursor);
+				resizing = false;
+				::Sleep(500);
 				::ShowWindow(hWndMask, SW_HIDE);
+				::SetActiveWindow(hWnd);
 			}
         }
     }
