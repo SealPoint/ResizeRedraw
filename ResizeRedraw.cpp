@@ -13,7 +13,6 @@
 #define WINDOW_HEIGHT 600
 #define WINDOW_BORDER_WIDTH 6
 #define WINDOW_CORNER_RADIUS 8
-#define CAPTION_HEIGHT 50
 
 // Global Variables:
 HINSTANCE hInst;								// current instance
@@ -143,6 +142,7 @@ BOOL InitInstance (HINSTANCE hInstance, int nCmdShow)
 	height = WINDOW_HEIGHT;
 	screenWidth = ::GetSystemMetrics(SM_CXFULLSCREEN);
 	screenHeight = ::GetSystemMetrics(SM_CYFULLSCREEN);
+	InitCaption(0, width);
 
 	hWnd = ::CreateWindow(szWindowClass,
 					      0, // no title
@@ -235,15 +235,55 @@ HRGN CreateRectTopTwoCornersRoundedRegion (HDC hdc, int radius, int startX)
 void OnPaint (HWND hwnd, HDC hdc)
 {
 	RECT rect;
-    ::GetClientRect(hwnd, &rect);
+	HDC hdcMemory2 = ::CreateCompatibleDC(hdc);
+	HBITMAP hMemoryBitmap = 0;
+	HBITMAP hOldBitmap = 0;
 
 	if (hwnd == hWnd)
 	{
-		//::FillRect(hdc, &rect, hBackgroundBrush);
+		::GetClientRect(hWnd, &rect);
+
+		// Create a bitmap big enough for our client rectangle.
+		hMemoryBitmap = ::CreateCompatibleBitmap(hdc,
+												 rect.right, // width
+												 rect.bottom); // height
+		hOldBitmap = (HBITMAP)::SelectObject(hdcMemory2, hMemoryBitmap);
+		::SetBkMode(hdcMemory2, TRANSPARENT);
+
+		rect.top = CAPTION_HEIGHT - 1;
+		::FillRect(hdcMemory2, &rect, hBackgroundBrush);
+		DrawCaption(hdcMemory2);
+
+		::BitBlt(hdc,
+				 0,
+				 0,
+				 rect.right,
+				 rect.bottom,
+				 hdcMemory2,
+				 0,
+				 0,
+				 SRCCOPY);
+
+		::SelectObject(hdcMemory2, hOldBitmap);
+		::DeleteObject(hMemoryBitmap);
+
+		if (resizing)
+		{
+			resizing = false;
+			::ShowWindow(hWndMask, SW_HIDE);
+		}
 	}
 	else if (hwnd == hWndMask)
 	{
-		::BitBlt(hdc,
+		::GetClientRect(hWndMask, &rect);
+		
+		// Create a bitmap big enough for our client rectangle.
+		hMemoryBitmap = ::CreateCompatibleBitmap(hdc,
+												 rect.right, // width
+												 rect.bottom); // height
+		hOldBitmap = (HBITMAP)::SelectObject(hdcMemory2, hMemoryBitmap);
+		::SetBkMode(hdcMemory2, TRANSPARENT);
+		::BitBlt(hdcMemory2,
 				 0, // x
 				 0, // y
 				 rect.right, // width
@@ -257,8 +297,64 @@ void OnPaint (HWND hwnd, HDC hdc)
 		rect.top = 0;
 		rect.bottom = height;
 		::FillRect(hdc, &rect, ::CreateSolidBrush(RGB(255, 255, 0)));*/
-		::FillRgn(hdc, hRgnMask, hBackgroundBrush);
+		::FillRgn(hdcMemory2, hRgnMask, hBackgroundBrush);
 		//::FillRect(hdc, &rect, ::CreateSolidBrush(RGB(255, 255, 0)));
+
+		// Draw caption
+		BeginPath(hdcMemory2);
+
+		::MoveToEx(hdcMemory2, x, 0, NULL);
+
+		::ArcTo(hdcMemory2,
+				x, // enclosing rect.left
+				0, // enclosing rect.top
+				x + WINDOW_CORNER_RADIUS * 2 - 1, // enclosing rect.right
+				WINDOW_CORNER_RADIUS * 2 - 1, // enclosing rect.bottom
+				x + WINDOW_CORNER_RADIUS - 1, // start point.x
+				0, // start point.y
+				x, // end point.x
+				WINDOW_CORNER_RADIUS - 1); // end point.y
+		::LineTo(hdcMemory2,
+				 x, // x
+				 CAPTION_HEIGHT); // y
+		::LineTo(hdcMemory2,
+				 x + width - 1, // x
+				 CAPTION_HEIGHT); // y
+		::LineTo(hdcMemory2,
+				 x + width - 1, // x
+				 WINDOW_CORNER_RADIUS - 1); // y
+
+		::ArcTo(hdcMemory2,
+				x + width - (WINDOW_CORNER_RADIUS * 2 - 1), // enclosing rect.left
+				0, // enclosing rect.top
+				x + width - 1, // enclosing rect.right
+				WINDOW_CORNER_RADIUS * 2 - 1, // enclosing rect.bottom
+				x + width - 1, // start point.x
+				WINDOW_CORNER_RADIUS - 1, // start point.y
+				x + width - (WINDOW_CORNER_RADIUS - 1), // end point.x
+				0); // end point.height
+		::LineTo(hdcMemory2,
+				 x + WINDOW_CORNER_RADIUS - 1, // x
+				 0); // y
+
+		// Bracket end a path 
+		EndPath(hdcMemory2);
+		::SelectClipPath(hdcMemory2, RGN_COPY);
+		DrawCaption(hdcMemory2);
+		//::FillRect(hdcMemory2, &rect, ::CreateSolidBrush(RGB(255, 0, 0)));
+
+		::BitBlt(hdc,
+				 0,
+				 0,
+				 rect.right,
+				 rect.bottom,
+				 hdcMemory2,
+				 0,
+				 0,
+				 SRCCOPY);
+
+		::SelectObject(hdcMemory2, hOldBitmap);
+		::DeleteObject(hMemoryBitmap);
 	}
 }
 
@@ -305,15 +401,16 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (wParam == SC_SZLEFT)
 			{
 				resizing = true;
-				::GetWindowRect(hwnd, &rect);
+				::GetWindowRect(hWnd, &rect);
 				x = rect.left;
 				y = rect.top;
 				width = rect.right - rect.left;
 				height = rect.bottom - rect.top;
 				int bitmapX = 0;
 				int bitmapY = y;
-				int bitmapWidth = rect.right;
-				int bitmapHeight = rect.bottom - rect.top;
+				int bitmapWidth = x + width;
+				int bitmapHeight = height;
+				InitCaption(x, width);
 
 				if (!hWndMask)
 				{
@@ -363,6 +460,10 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 			}
 
 			return DefWindowProc(hwnd, message, wParam, lParam);
+		}
+		case WM_ERASEBKGND:
+		{
+			return 1;
 		}
 		case WM_PAINT:
 		{
@@ -423,15 +524,22 @@ LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam)
 					::DeleteRgn(hRgnMask);
 					hRgnMask = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, x);
 					::ReleaseDC(hWndMask, hdc);
+					InitCaption(x, width);
 					
-					//std::stringstream str;
-					//str << "X = " << x << std::endl;
-					//::OutputDebugStringA(str.str().c_str());
+					std::stringstream str;
+					str << "X = " << x << ", width = " << width << std::endl;
+					::OutputDebugStringA(str.str().c_str());
+					::InvalidateRect(hWndMask, &rect, FALSE);
+
+					rect.right = x + width;
+					rect.bottom = CAPTION_HEIGHT;
+					::GetClientRect(hWndMask, &rect);
 					::InvalidateRect(hWndMask, &rect, FALSE);
 				}
             }
 			else if (wParam == WM_LBUTTONUP)
 			{
+				InitCaption(0, width);
 				HDC hdc = ::GetDC(hWnd);
 				::DeleteRgn(hRgn);
 				hRgn = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, 0);
@@ -440,10 +548,10 @@ LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam)
 				::MoveWindow(hWnd, x, y, width, height, TRUE);
 				::UnhookWindowsHookEx(hMouseHook);
 				::SetCursor(hDefaultCursor);
-				resizing = false;
-				::Sleep(500);
-				::ShowWindow(hWndMask, SW_HIDE);
-				::SetActiveWindow(hWnd);
+				//resizing = false;
+				//::Sleep(500);
+				//::ShowWindow(hWndMask, SW_HIDE);
+				//::SetActiveWindow(hWnd);
 			}
         }
     }
