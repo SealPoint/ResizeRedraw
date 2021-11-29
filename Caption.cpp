@@ -44,7 +44,7 @@ void InitCaption (int startX, int width)
 }
 
 //===================================================================================
-void DrawCaption (HDC hdc)
+void DrawCaption (HDC hdc, HBITMAP hBitmap)
 {
 	GRADIENT_RECT gradRect;
     gradRect.UpperLeft = 0;
@@ -54,4 +54,25 @@ void DrawCaption (HDC hdc)
     gradRect.UpperLeft = 1;
     gradRect.LowerRight = 0;
     ::GradientFill(hdc, rightGradientVertices, 2, &gradRect, 1, GRADIENT_FILL_RECT_H);
+
+	if (hBitmap)
+	{
+		BITMAP bitmap;
+		memset(&bitmap, 0, sizeof(BITMAP));
+		::GetObject(hBitmap, sizeof(BITMAP), &bitmap);
+
+        HDC hdcMem = ::CreateCompatibleDC(hdc);
+        ::SelectObject(hdcMem, hBitmap);
+
+        ::BitBlt(hdc, // Destination context
+                 leftGradientVertices[0].x + CAPTION_LEFT_PAD, // x
+                 CAPTION_TOP_PAD, // y
+                 bitmap.bmWidth, // Bitmap width
+                 bitmap.bmHeight, // Bitmap height
+                 hdcMem, // Source context
+                 0, // Source x to start from
+                 0, // Source y to start from
+                 SRCCOPY); // Copy
+        ::DeleteDC(hdcMem);
+	}
 }

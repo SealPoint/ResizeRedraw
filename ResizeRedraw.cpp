@@ -33,6 +33,8 @@ int width;
 int height;
 HRGN hRgn;
 HRGN hRgnMask;
+HFONT hTitleFont;
+HBITMAP hCaptionBitmap;
 
 int screenWidth;
 int screenHeight;
@@ -67,6 +69,8 @@ int APIENTRY _tWinMain (HINSTANCE hInstance,
 	hBackgroundBrush = ::CreateSolidBrush(RGB(118, 182, 252));
 	hDefaultCursor = ::LoadCursor(NULL, IDC_ARROW);
 	hSizeHorizCursor = ::LoadCursor(NULL, IDC_SIZEWE);
+	hCaptionBitmap = (HBITMAP)::LoadImage(hInstance, MAKEINTRESOURCE(IDB_STAR), IMAGE_BITMAP, 0, 0, 0);
+
 	MyRegisterClass(hInstance, szWindowClass, hBackgroundBrush);
 	MyRegisterClass(hInstance, szMaskWindowClass, (HBRUSH)::GetStockObject(NULL_BRUSH)); // transparent
 
@@ -252,7 +256,7 @@ void OnPaint (HWND hwnd, HDC hdc)
 
 		rect.top = CAPTION_HEIGHT - 1;
 		::FillRect(hdcMemory2, &rect, hBackgroundBrush);
-		DrawCaption(hdcMemory2);
+		DrawCaption(hdcMemory2, hCaptionBitmap);
 
 		::BitBlt(hdc,
 				 0,
@@ -266,12 +270,6 @@ void OnPaint (HWND hwnd, HDC hdc)
 
 		::SelectObject(hdcMemory2, hOldBitmap);
 		::DeleteObject(hMemoryBitmap);
-
-		if (resizing)
-		{
-			resizing = false;
-			::ShowWindow(hWndMask, SW_HIDE);
-		}
 	}
 	else if (hwnd == hWndMask)
 	{
@@ -340,7 +338,7 @@ void OnPaint (HWND hwnd, HDC hdc)
 		// Bracket end a path 
 		EndPath(hdcMemory2);
 		::SelectClipPath(hdcMemory2, RGN_COPY);
-		DrawCaption(hdcMemory2);
+		DrawCaption(hdcMemory2, hCaptionBitmap);
 		//::FillRect(hdcMemory2, &rect, ::CreateSolidBrush(RGB(255, 0, 0)));
 
 		::BitBlt(hdc,
@@ -526,9 +524,9 @@ LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam)
 					::ReleaseDC(hWndMask, hdc);
 					InitCaption(x, width);
 					
-					std::stringstream str;
-					str << "X = " << x << ", width = " << width << std::endl;
-					::OutputDebugStringA(str.str().c_str());
+					//std::stringstream str;
+					//str << "X = " << x << ", width = " << width << std::endl;
+					//::OutputDebugStringA(str.str().c_str());
 					::InvalidateRect(hWndMask, &rect, FALSE);
 
 					rect.right = x + width;
@@ -544,14 +542,14 @@ LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam)
 				::DeleteRgn(hRgn);
 				hRgn = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, 0);
 				::ReleaseDC(hWnd, hdc);
-				::SetWindowRgn(hWnd, hRgn, FALSE);
+				::SetWindowRgn(hWnd, hRgn, TRUE);
 				::MoveWindow(hWnd, x, y, width, height, TRUE);
 				::UnhookWindowsHookEx(hMouseHook);
 				::SetCursor(hDefaultCursor);
-				//resizing = false;
+				resizing = false;
 				//::Sleep(500);
-				//::ShowWindow(hWndMask, SW_HIDE);
-				//::SetActiveWindow(hWnd);
+				::ShowWindow(hWndMask, SW_HIDE);
+				::SetActiveWindow(hWnd);
 			}
         }
     }
