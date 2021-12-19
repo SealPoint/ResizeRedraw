@@ -21,8 +21,6 @@ TCHAR szWindowClass[MAX_LOADSTRING];			// the main window class name
 TCHAR szMaskWindowClass[MAX_LOADSTRING];
 
 HWND hWnd = 0;									// window handle
-HWND hWndMask = 0;								// Masking window handle
-HBITMAP hScreenBitmap;							// Screen capture 
 HBRUSH hBackgroundBrush;						// Background color brush
 HCURSOR hDefaultCursor;
 HCURSOR hSizeHorizCursor;
@@ -31,8 +29,7 @@ int y;
 int prevX, prevY;
 int width;
 int height;
-HRGN hRgn;
-HRGN hRgnMask;
+HRGN hRgn = 0;
 HFONT hTitleFont;
 HBITMAP hCaptionBitmap;
 
@@ -45,7 +42,8 @@ bool resizing = false;
 // Forward declarations of functions included in this code module:
 ATOM MyRegisterClass (HINSTANCE hInstance, TCHAR* szClassName, HBRUSH hBrush);
 BOOL InitInstance (HINSTANCE, int);
-HRGN CreateRectTopTwoCornersRoundedRegion (HDC hdc, int radius, int startX);
+HRGN CreateRectTopTwoCornersRoundedRegion (HDC hdc, int radius, int startX, int startY);
+static BOOL CALLBACK EnumWindowCallback (HWND wAppWnd, LPARAM lParam);
 LRESULT CALLBACK WndProc (HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam);
 
@@ -56,6 +54,8 @@ int APIENTRY _tWinMain (HINSTANCE hInstance,
 {
 	UNREFERENCED_PARAMETER(hPrevInstance);
 	UNREFERENCED_PARAMETER(lpCmdLine);
+
+	//::EnumWindows(EnumWindowCallback, NULL);
 
  	// TODO: Place code here.
 	MSG msg;
@@ -116,7 +116,7 @@ ATOM MyRegisterClass (HINSTANCE hInstance, TCHAR* szClassName, HBRUSH hBrush)
 
 	wcex.cbSize = sizeof(WNDCLASSEX);
 	wcex.lpszClassName = szClassName;
-	wcex.hbrBackground = hBrush;
+	wcex.hbrBackground = (HBRUSH)::GetStockObject(NULL_BRUSH);
 	wcex.lpfnWndProc = WndProc;
 	wcex.hCursor = hDefaultCursor;
 	wcex.style = CS_HREDRAW | CS_VREDRAW;
@@ -151,10 +151,10 @@ BOOL InitInstance (HINSTANCE hInstance, int nCmdShow)
 	hWnd = ::CreateWindow(szWindowClass,
 					      0, // no title
 					      WS_POPUP,
-					      x,
-					      y,
-					      width,
-					      height,
+					      0,
+					      0,
+					      screenWidth,
+					      screenHeight,
 					      NULL, // no parent window
 					      NULL, // no menu
 					      hInstance,
@@ -165,24 +165,6 @@ BOOL InitInstance (HINSTANCE hInstance, int nCmdShow)
 		return FALSE;
 	}
 
-	HDC hScreenDC = ::GetDC(NULL); // Get screen DC
-	HDC hdc = ::GetDC(NULL);
-	hdcMemory = ::CreateCompatibleDC(hdc);
-	hScreenBitmap = ::CreateCompatibleBitmap(hdc, screenWidth, screenHeight);
-	::SelectObject(hdcMemory, hScreenBitmap);
-	::BitBlt(hdcMemory,
-			 0,
-			 0,
-			 screenWidth,
-			 screenHeight,
-			 hScreenDC,
-			 0,
-			 0,
-			 SRCCOPY);
-	hRgn = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, 0);
-	::ReleaseDC(hWnd, hdc);
-	::SetWindowRgn(hWnd, hRgn, FALSE);
-
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
 
@@ -190,44 +172,44 @@ BOOL InitInstance (HINSTANCE hInstance, int nCmdShow)
 }
 
 //===================================================================================
-HRGN CreateRectTopTwoCornersRoundedRegion (HDC hdc, int radius, int startX)
+HRGN CreateRectTopTwoCornersRoundedRegion (HDC hdc, int radius, int startX, int startY)
 {
     // Bracket begin a path 
     BeginPath(hdc);
 
-	::MoveToEx(hdc, startX, 0, NULL);
+	::MoveToEx(hdc, startX, startY, NULL);
 
     ::ArcTo(hdc,
             startX, // enclosing rect.left
-            0, // enclosing rect.top
+            startY, // enclosing rect.top
             startX + radius * 2 - 1, // enclosing rect.right
-            radius * 2 - 1, // enclosing rect.bottom
+            startY + radius * 2 - 1, // enclosing rect.bottom
             startX + radius - 1, // start point.x
-            0, // start point.y
+            startY, // start point.y
             startX, // end point.x
-            radius - 1); // end point.y
+            startY + radius - 1); // end point.y
     ::LineTo(hdc,
              startX, // x
-             height - 1); // y
+             startY + height - 1); // y
     ::LineTo(hdc,
              startX + width - 1, // x
-             height - 1); // y
+             startY + height - 1); // y
     ::LineTo(hdc,
              startX + width - 1, // x
-             radius - 1); // y
+             startY + radius - 1); // y
 
     ::ArcTo(hdc,
             startX + width - (radius * 2 - 1), // enclosing rect.left
-            0, // enclosing rect.top
+            startY, // enclosing rect.top
             startX + width - 1, // enclosing rect.right
-            radius * 2 - 1, // enclosing rect.bottom
+            startY + radius * 2 - 1, // enclosing rect.bottom
             startX + width - 1, // start point.x
-            radius - 1, // start point.y
+            startY + radius - 1, // start point.y
             startX + width - (radius - 1), // end point.x
-            0); // end point.height
+            startY); // end point.height
     ::LineTo(hdc,
              startX + radius - 1, // x
-             0); // y
+             startY); // y
 
     // Bracket end a path 
     EndPath(hdc);
@@ -238,122 +220,62 @@ HRGN CreateRectTopTwoCornersRoundedRegion (HDC hdc, int radius, int startX)
 //===================================================================================
 void OnPaint (HWND hwnd, HDC hdc)
 {
-	RECT rect;
-	HDC hdcMemory2 = ::CreateCompatibleDC(hdc);
+	if (!hRgn)
+	{
+		hRgn = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, x, y);
+	}
+
+	::SetBkMode(hdc, TRANSPARENT);
+	::FillRgn(hdc, hRgn, hBackgroundBrush);
+
+	/*HDC hdcMemory = ::CreateCompatibleDC(hdc);
 	HBITMAP hMemoryBitmap = 0;
 	HBITMAP hOldBitmap = 0;
 
-	if (hwnd == hWnd)
+	// Create a bitmap big enough for our client rectangle.
+	hMemoryBitmap = ::CreateCompatibleBitmap(hdc,
+											 width, // width
+											 height); // height
+	hOldBitmap = (HBITMAP)::SelectObject(hdcMemory, hMemoryBitmap);
+	::SetBkMode(hdcMemory, TRANSPARENT);
+
+	::FillRgn(hdcMemory, hRgn, hBackgroundBrush);
+
+	//rect.top = CAPTION_HEIGHT - 1;
+	//::FillRect(hdcMemory2, &rect, hBackgroundBrush);
+	//DrawCaption(hdcMemory2, hCaptionBitmap);
+
+	::BitBlt(hdc,
+			 x,
+			 y,
+			 width,
+			 height,
+			 hdcMemory,
+			 0,
+			 0,
+			 SRCCOPY);
+
+	::SelectObject(hdcMemory, hOldBitmap);
+	::DeleteObject(hMemoryBitmap);*/
+}
+
+static BOOL CALLBACK EnumWindowCallback (HWND wAppWnd, LPARAM lParam)
+{
+	int length = GetWindowTextLength(wAppWnd);
+    char* buffer = new char[length + 1];
+	::GetWindowTextA(wAppWnd, buffer, length + 1);
+
+    // List visible windows with a non-empty title
+	if (::IsWindowVisible(wAppWnd) && length > 0)
 	{
-		::GetClientRect(hWnd, &rect);
+		std::stringstream str;
+		str << buffer << std::endl;
+		::OutputDebugStr(str.str().c_str());
+    }
 
-		// Create a bitmap big enough for our client rectangle.
-		hMemoryBitmap = ::CreateCompatibleBitmap(hdc,
-												 rect.right, // width
-												 rect.bottom); // height
-		hOldBitmap = (HBITMAP)::SelectObject(hdcMemory2, hMemoryBitmap);
-		::SetBkMode(hdcMemory2, TRANSPARENT);
+	delete [] buffer;
 
-		rect.top = CAPTION_HEIGHT - 1;
-		::FillRect(hdcMemory2, &rect, hBackgroundBrush);
-		DrawCaption(hdcMemory2, hCaptionBitmap);
-
-		::BitBlt(hdc,
-				 0,
-				 0,
-				 rect.right,
-				 rect.bottom,
-				 hdcMemory2,
-				 0,
-				 0,
-				 SRCCOPY);
-
-		::SelectObject(hdcMemory2, hOldBitmap);
-		::DeleteObject(hMemoryBitmap);
-	}
-	else if (hwnd == hWndMask)
-	{
-		::GetClientRect(hWndMask, &rect);
-		
-		// Create a bitmap big enough for our client rectangle.
-		hMemoryBitmap = ::CreateCompatibleBitmap(hdc,
-												 rect.right, // width
-												 rect.bottom); // height
-		hOldBitmap = (HBITMAP)::SelectObject(hdcMemory2, hMemoryBitmap);
-		::SetBkMode(hdcMemory2, TRANSPARENT);
-		::BitBlt(hdcMemory2,
-				 0, // x
-				 0, // y
-				 rect.right, // width
-				 rect.bottom, // height
-				 hdcMemory,
-				 0, // Src x
-				 y, // Src y
-				 SRCCOPY); // Copy
-		/*rect.left = x;
-		rect.right = x + width;
-		rect.top = 0;
-		rect.bottom = height;
-		::FillRect(hdc, &rect, ::CreateSolidBrush(RGB(255, 255, 0)));*/
-		::FillRgn(hdcMemory2, hRgnMask, hBackgroundBrush);
-		//::FillRect(hdc, &rect, ::CreateSolidBrush(RGB(255, 255, 0)));
-
-		// Draw caption
-		BeginPath(hdcMemory2);
-
-		::MoveToEx(hdcMemory2, x, 0, NULL);
-
-		::ArcTo(hdcMemory2,
-				x, // enclosing rect.left
-				0, // enclosing rect.top
-				x + WINDOW_CORNER_RADIUS * 2 - 1, // enclosing rect.right
-				WINDOW_CORNER_RADIUS * 2 - 1, // enclosing rect.bottom
-				x + WINDOW_CORNER_RADIUS - 1, // start point.x
-				0, // start point.y
-				x, // end point.x
-				WINDOW_CORNER_RADIUS - 1); // end point.y
-		::LineTo(hdcMemory2,
-				 x, // x
-				 CAPTION_HEIGHT); // y
-		::LineTo(hdcMemory2,
-				 x + width - 1, // x
-				 CAPTION_HEIGHT); // y
-		::LineTo(hdcMemory2,
-				 x + width - 1, // x
-				 WINDOW_CORNER_RADIUS - 1); // y
-
-		::ArcTo(hdcMemory2,
-				x + width - (WINDOW_CORNER_RADIUS * 2 - 1), // enclosing rect.left
-				0, // enclosing rect.top
-				x + width - 1, // enclosing rect.right
-				WINDOW_CORNER_RADIUS * 2 - 1, // enclosing rect.bottom
-				x + width - 1, // start point.x
-				WINDOW_CORNER_RADIUS - 1, // start point.y
-				x + width - (WINDOW_CORNER_RADIUS - 1), // end point.x
-				0); // end point.height
-		::LineTo(hdcMemory2,
-				 x + WINDOW_CORNER_RADIUS - 1, // x
-				 0); // y
-
-		// Bracket end a path 
-		EndPath(hdcMemory2);
-		::SelectClipPath(hdcMemory2, RGN_COPY);
-		DrawCaption(hdcMemory2, hCaptionBitmap);
-		//::FillRect(hdcMemory2, &rect, ::CreateSolidBrush(RGB(255, 0, 0)));
-
-		::BitBlt(hdc,
-				 0,
-				 0,
-				 rect.right,
-				 rect.bottom,
-				 hdcMemory2,
-				 0,
-				 0,
-				 SRCCOPY);
-
-		::SelectObject(hdcMemory2, hOldBitmap);
-		::DeleteObject(hMemoryBitmap);
-	}
+    return TRUE;
 }
 
 //
@@ -368,7 +290,6 @@ void OnPaint (HWND hwnd, HDC hdc)
 //
 LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	RECT rect;
 	PAINTSTRUCT ps;
 	HDC hdc;
 	//std::stringstream str;
@@ -377,24 +298,30 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 	switch (message)
 	{
-		case WM_NCHITTEST:
+		case WM_LBUTTONDOWN:
 		{
-			int xx = GET_X_LPARAM(lParam) - x;
-			int yy = GET_Y_LPARAM(lParam) - y;
+			int xx = GET_X_LPARAM(lParam);
+			int yy = GET_Y_LPARAM(lParam);
+			POINT p; p.x = xx; p.y = yy;
 
-			if (yy <= CAPTION_HEIGHT)
+			if (xx < x || xx >= x + width || yy < y || yy >= y + height)
 			{
-				return HTCAPTION;
+				::ShowWindow(hWnd, SW_MINIMIZE);
+				HWND hOtherAppWindow = ::WindowFromPoint(p);
+
+				if (hOtherAppWindow != hWnd)
+				{
+					mouse_event(MOUSEEVENTF_LEFTDOWN, p.x, p.y, 0, 0);
+					mouse_event(MOUSEEVENTF_LEFTUP, p.x, p.y, 0, 0);
+					mouse_event(MOUSEEVENTF_LEFTDOWN, p.x, p.y, 0, 0);
+					mouse_event(MOUSEEVENTF_LEFTUP, p.x, p.y, 0, 0);
+					return 0;
+				}
 			}
 
-			if (xx <= WINDOW_BORDER_WIDTH)
-			{
-				return HTLEFT;
-			}
-
-			return HTCLIENT;
+			return 0;
 		}
-		case WM_SYSCOMMAND:
+		/*case WM_SYSCOMMAND:
 		{
 			if (wParam == SC_SZLEFT)
 			{
@@ -458,7 +385,7 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 			}
 
 			return DefWindowProc(hwnd, message, wParam, lParam);
-		}
+		}*/
 		case WM_ERASEBKGND:
 		{
 			return 1;
@@ -486,7 +413,7 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 //===================================================================================
 LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam)
 {
-    if (nCode < 0)
+    /*if (nCode < 0)
     {
         return ::CallNextHookEx(0, nCode, wParam, lParam);
     }
@@ -552,7 +479,7 @@ LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam)
 				::SetActiveWindow(hWnd);
 			}
         }
-    }
+    }*/
 
     return ::CallNextHookEx(0, nCode, wParam, lParam);
 }
