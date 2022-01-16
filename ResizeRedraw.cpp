@@ -1,485 +1,342 @@
-// ResizeRedraw.cpp : Defines the entry point for the application.
-//
-
-#include "stdafx.h"
 #include "ResizeRedraw.h"
 
-#include <sstream>
-
-#define MAX_LOADSTRING 100
-#define WINDOW_X 200
-#define WINDOW_Y 200
-#define WINDOW_WIDTH 800
-#define WINDOW_HEIGHT 600
-#define WINDOW_BORDER_WIDTH 6
-#define WINDOW_CORNER_RADIUS 8
-
-// Global Variables:
-HINSTANCE hInst;								// current instance
-TCHAR szTitle[MAX_LOADSTRING];					// The title bar text
-TCHAR szWindowClass[MAX_LOADSTRING];			// the main window class name
-TCHAR szMaskWindowClass[MAX_LOADSTRING];
-
-HWND hWnd = 0;									// window handle
-HBRUSH hBackgroundBrush;						// Background color brush
-HCURSOR hDefaultCursor;
-HCURSOR hSizeHorizCursor;
-int x;
-int y;
-int prevX, prevY;
-int width;
-int height;
-HRGN hRgn = 0;
-HFONT hTitleFont;
-HBITMAP hCaptionBitmap;
-
-int screenWidth;
-int screenHeight;
-HDC hdcMemory;
-HHOOK hMouseHook;
-bool resizing = false;
-
-// Forward declarations of functions included in this code module:
-ATOM MyRegisterClass (HINSTANCE hInstance, TCHAR* szClassName, HBRUSH hBrush);
-BOOL InitInstance (HINSTANCE, int);
-HRGN CreateRectTopTwoCornersRoundedRegion (HDC hdc, int radius, int startX, int startY);
-static BOOL CALLBACK EnumWindowCallback (HWND wAppWnd, LPARAM lParam);
-LRESULT CALLBACK WndProc (HWND, UINT, WPARAM, LPARAM);
-LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam);
-
-int APIENTRY _tWinMain (HINSTANCE hInstance,
-                        HINSTANCE hPrevInstance,
-                        LPTSTR lpCmdLine,
-                        int nCmdShow)
-{
-	UNREFERENCED_PARAMETER(hPrevInstance);
-	UNREFERENCED_PARAMETER(lpCmdLine);
-
-	//::EnumWindows(EnumWindowCallback, NULL);
-
- 	// TODO: Place code here.
-	MSG msg;
-	HACCEL hAccelTable;
-
-	// Initialize global strings
-	LoadString(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-	LoadString(hInstance, IDC_RESIZEREDRAW, szWindowClass, MAX_LOADSTRING);
-	LoadString(hInstance, IDC_MASK_WINDOW, szMaskWindowClass, MAX_LOADSTRING);
-
-	hBackgroundBrush = ::CreateSolidBrush(RGB(118, 182, 252));
-	hDefaultCursor = ::LoadCursor(NULL, IDC_ARROW);
-	hSizeHorizCursor = ::LoadCursor(NULL, IDC_SIZEWE);
-	hCaptionBitmap = (HBITMAP)::LoadImage(hInstance, MAKEINTRESOURCE(IDB_STAR), IMAGE_BITMAP, 0, 0, 0);
-
-	MyRegisterClass(hInstance, szWindowClass, hBackgroundBrush);
-	MyRegisterClass(hInstance, szMaskWindowClass, (HBRUSH)::GetStockObject(NULL_BRUSH)); // transparent
-
-	// Perform application initialization:
-	if (!InitInstance (hInstance, nCmdShow))
-	{
-		return FALSE;
-	}
-
-	hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_RESIZEREDRAW));
-
-	// Main message loop:
-	while (GetMessage(&msg, NULL, 0, 0))
-	{
-		if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
-		{
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		}
-	}
-
-	return (int) msg.wParam;
-}
-
-
-
-//
-//  FUNCTION: MyRegisterClass()
-//
-//  PURPOSE: Registers the window class.
-//
-//  COMMENTS:
-//
-//    This function and its usage are only necessary if you want this code
-//    to be compatible with Win32 systems prior to the 'RegisterClassEx'
-//    function that was added to Windows 95. It is important to call this function
-//    so that the application will get 'well formed' small icons associated
-//    with it.
-//
-ATOM MyRegisterClass (HINSTANCE hInstance, TCHAR* szClassName, HBRUSH hBrush)
-{
-	WNDCLASSEX wcex = { 0 };
-
-	wcex.cbSize = sizeof(WNDCLASSEX);
-	wcex.lpszClassName = szClassName;
-	wcex.hbrBackground = (HBRUSH)::GetStockObject(NULL_BRUSH);
-	wcex.lpfnWndProc = WndProc;
-	wcex.hCursor = hDefaultCursor;
-	wcex.style = CS_HREDRAW | CS_VREDRAW;
-	wcex.cbClsExtra	= 0;
-	wcex.cbWndExtra	= 0;
-	wcex.hInstance = hInstance;
-
-	return RegisterClassEx(&wcex);
-}
-
-//
-//   FUNCTION: InitInstance(HINSTANCE, int)
-//
-//   PURPOSE: Saves instance handle and creates main window
-//
-//   COMMENTS:
-//
-//        In this function, we save the instance handle in a global variable and
-//        create and display the main program window.
-//
-BOOL InitInstance (HINSTANCE hInstance, int nCmdShow)
-{
-	hInst = hInstance; // Store instance handle in our global variable
-	x = WINDOW_X;
-	y = WINDOW_Y;
-	width = WINDOW_WIDTH;
-	height = WINDOW_HEIGHT;
-	screenWidth = ::GetSystemMetrics(SM_CXFULLSCREEN);
-	screenHeight = ::GetSystemMetrics(SM_CYFULLSCREEN);
-	InitCaption(0, width);
-
-	hWnd = ::CreateWindow(szWindowClass,
-					      0, // no title
-					      WS_POPUP,
-					      0,
-					      0,
-					      screenWidth,
-					      screenHeight,
-					      NULL, // no parent window
-					      NULL, // no menu
-					      hInstance,
-					      0); // no extra param
-
-	if (!hWnd)
-	{
-		return FALSE;
-	}
-
-    ShowWindow(hWnd, nCmdShow);
-    UpdateWindow(hWnd);
-
-    return TRUE;
-}
-
 //===================================================================================
-HRGN CreateRectTopTwoCornersRoundedRegion (HDC hdc, int radius, int startX, int startY)
+LRESULT CALLBACK WindowsProc (HWND hwnd,
+                              UINT messageType,
+                              WPARAM wParam,
+                              LPARAM lParam)
 {
-    // Bracket begin a path 
-    BeginPath(hdc);
+	static ResizeRedraw* resizeRedraw = NULL;
 
-	::MoveToEx(hdc, startX, startY, NULL);
-
-    ::ArcTo(hdc,
-            startX, // enclosing rect.left
-            startY, // enclosing rect.top
-            startX + radius * 2 - 1, // enclosing rect.right
-            startY + radius * 2 - 1, // enclosing rect.bottom
-            startX + radius - 1, // start point.x
-            startY, // start point.y
-            startX, // end point.x
-            startY + radius - 1); // end point.y
-    ::LineTo(hdc,
-             startX, // x
-             startY + height - 1); // y
-    ::LineTo(hdc,
-             startX + width - 1, // x
-             startY + height - 1); // y
-    ::LineTo(hdc,
-             startX + width - 1, // x
-             startY + radius - 1); // y
-
-    ::ArcTo(hdc,
-            startX + width - (radius * 2 - 1), // enclosing rect.left
-            startY, // enclosing rect.top
-            startX + width - 1, // enclosing rect.right
-            startY + radius * 2 - 1, // enclosing rect.bottom
-            startX + width - 1, // start point.x
-            startY + radius - 1, // start point.y
-            startX + width - (radius - 1), // end point.x
-            startY); // end point.height
-    ::LineTo(hdc,
-             startX + radius - 1, // x
-             startY); // y
-
-    // Bracket end a path 
-    EndPath(hdc);
-
-    return ::PathToRegion(hdc);
-}
-
-//===================================================================================
-void OnPaint (HWND hwnd, HDC hdc)
-{
-	if (!hRgn)
-	{
-		hRgn = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, x, y);
-	}
-
-	::SetBkMode(hdc, TRANSPARENT);
-	::FillRgn(hdc, hRgn, hBackgroundBrush);
-
-	/*HDC hdcMemory = ::CreateCompatibleDC(hdc);
-	HBITMAP hMemoryBitmap = 0;
-	HBITMAP hOldBitmap = 0;
-
-	// Create a bitmap big enough for our client rectangle.
-	hMemoryBitmap = ::CreateCompatibleBitmap(hdc,
-											 width, // width
-											 height); // height
-	hOldBitmap = (HBITMAP)::SelectObject(hdcMemory, hMemoryBitmap);
-	::SetBkMode(hdcMemory, TRANSPARENT);
-
-	::FillRgn(hdcMemory, hRgn, hBackgroundBrush);
-
-	//rect.top = CAPTION_HEIGHT - 1;
-	//::FillRect(hdcMemory2, &rect, hBackgroundBrush);
-	//DrawCaption(hdcMemory2, hCaptionBitmap);
-
-	::BitBlt(hdc,
-			 x,
-			 y,
-			 width,
-			 height,
-			 hdcMemory,
-			 0,
-			 0,
-			 SRCCOPY);
-
-	::SelectObject(hdcMemory, hOldBitmap);
-	::DeleteObject(hMemoryBitmap);*/
-}
-
-static BOOL CALLBACK EnumWindowCallback (HWND wAppWnd, LPARAM lParam)
-{
-	int length = GetWindowTextLength(wAppWnd);
-    char* buffer = new char[length + 1];
-	::GetWindowTextA(wAppWnd, buffer, length + 1);
-
-    // List visible windows with a non-empty title
-	if (::IsWindowVisible(wAppWnd) && length > 0)
-	{
-		std::stringstream str;
-		str << buffer << std::endl;
-		::OutputDebugStr(str.str().c_str());
-    }
-
-	delete [] buffer;
-
-    return TRUE;
-}
-
-//
-//  FUNCTION: WndProc(HWND, UINT, WPARAM, LPARAM)
-//
-//  PURPOSE:  Processes messages for the main window.
-//
-//  WM_COMMAND	- process the application menu
-//  WM_PAINT	- Paint the main window
-//  WM_DESTROY	- post a quit message and return
-//
-//
-LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
-{
-	PAINTSTRUCT ps;
-	HDC hdc;
-	//std::stringstream str;
-	//str << message << std::endl;
-	//::OutputDebugStringA(str.str().c_str());
-
-	switch (message)
-	{
+    switch (messageType) 
+ 	{
+        case WM_COMMAND:
+        {
+            return resizeRedraw->onCommand(wParam, lParam);
+        }
+        case WM_CLOSE:
+        {
+            return resizeRedraw->onClose(wParam, lParam);
+        }
+        case WM_CREATE:
+        {
+			CREATESTRUCTA* createStruct = (CREATESTRUCTA*)lParam;
+			resizeRedraw = (ResizeRedraw*)createStruct->lpCreateParams;
+            return resizeRedraw->onCreate(wParam, lParam);
+        }
 		case WM_LBUTTONDOWN:
 		{
-			int xx = GET_X_LPARAM(lParam);
-			int yy = GET_Y_LPARAM(lParam);
-			POINT p; p.x = xx; p.y = yy;
-
-			if (xx < x || xx >= x + width || yy < y || yy >= y + height)
-			{
-				::ShowWindow(hWnd, SW_MINIMIZE);
-				HWND hOtherAppWindow = ::WindowFromPoint(p);
-
-				if (hOtherAppWindow != hWnd)
-				{
-					mouse_event(MOUSEEVENTF_LEFTDOWN, p.x, p.y, 0, 0);
-					mouse_event(MOUSEEVENTF_LEFTUP, p.x, p.y, 0, 0);
-					mouse_event(MOUSEEVENTF_LEFTDOWN, p.x, p.y, 0, 0);
-					mouse_event(MOUSEEVENTF_LEFTUP, p.x, p.y, 0, 0);
-					return 0;
-				}
-			}
-
-			return 0;
+			return resizeRedraw->onMouseDown(wParam, lParam);
 		}
-		/*case WM_SYSCOMMAND:
+		case WM_LBUTTONUP:
 		{
-			if (wParam == SC_SZLEFT)
-			{
-				resizing = true;
-				::GetWindowRect(hWnd, &rect);
-				x = rect.left;
-				y = rect.top;
-				width = rect.right - rect.left;
-				height = rect.bottom - rect.top;
-				int bitmapX = 0;
-				int bitmapY = y;
-				int bitmapWidth = x + width;
-				int bitmapHeight = height;
-				InitCaption(x, width);
-
-				if (!hWndMask)
-				{
-					hWndMask = ::CreateWindowEx(WS_EX_TOPMOST,
-												szWindowClass,
-												0, // No title
-												WS_POPUP,
-												bitmapX,
-												bitmapY,
-												bitmapWidth,
-												bitmapHeight,
-												NULL, // no parent
-												NULL, // no menu
-												hInst,
-												0); // no param
-				}
-				else
-				{
-					::MoveWindow(hWndMask,
-								 bitmapX,
-								 bitmapY,
-								 bitmapWidth,
-								 bitmapHeight,
-								 FALSE);
-				}
-
-				HDC hdc = ::GetDC(hWndMask);
-				hRgnMask = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, rect.left);
-				::ReleaseDC(hWndMask, hdc);
-
-				::ShowWindow(hWndMask, SW_SHOW);
-				::UpdateWindow(hWndMask);
-				hMouseHook = ::SetWindowsHookExA(WH_MOUSE_LL, MouseHookProc, 0, 0);
-
-				return 0;
-			}
-
-			return DefWindowProc(hwnd, message, wParam, lParam);
+			return resizeRedraw->onMouseUp(wParam, lParam);
 		}
-		case WM_WINDOWPOSCHANGED:
+		case WM_MOUSEMOVE:
 		{
-			if (hwnd == hWnd && !resizing)
-			{
-				WINDOWPOS* winPos = (WINDOWPOS*)lParam;
-				x = winPos->x;
-				y = winPos->y;
-			}
+			return resizeRedraw->onMouseMove(wParam, lParam);
+		}
+        case WM_PAINT:
+        {
+            return resizeRedraw->onPaint(wParam, lParam);
+        }
+        default: 
+        {
+            return ::DefWindowProc(hwnd, messageType, wParam, lParam); 
+        }
+ 	} 
 
-			return DefWindowProc(hwnd, message, wParam, lParam);
-		}*/
-		case WM_ERASEBKGND:
-		{
-			return 1;
-		}
-		case WM_PAINT:
-		{
-			hdc = BeginPaint(hwnd, &ps);
-			OnPaint(hwnd, hdc);
-			EndPaint(hwnd, &ps);
-			break;
-		}
-		case WM_DESTROY:
-		{
-			PostQuitMessage(0);
-			break;
-		}
-		default:
-		{
-			return DefWindowProc(hwnd, message, wParam, lParam);
-		}
-	}
-	return 0;
+ 	return 0;
+}
+
+HBRUSH ResizeRedraw::m_backgroundBrush = 0;
+
+//===================================================================================
+ResizeRedraw::ResizeRedraw (HINSTANCE hInst,
+						    int x,
+						    int y,
+						    int width,
+						    int height)
+    : m_hInst(hInst)
+    , m_hwnd(0)
+    , m_x(x)
+    , m_y(y)
+    , m_width(width)
+    , m_height(height)
+	, m_hdcMemory(0)
+	, m_prevMouseX(-1)
+	, m_prevMouseY(-1)
+{
+	m_x = 200;
+	m_y = 200;
+	m_width = 200;
+	m_height = 200;
+    initialize();
 }
 
 //===================================================================================
-LRESULT CALLBACK MouseHookProc (int nCode, WPARAM wParam, LPARAM lParam)
+ResizeRedraw::~ResizeRedraw ()
 {
-    /*if (nCode < 0)
+	if (m_hdcMemory)
+	{
+		::DeleteDC(m_hdcMemory);
+	}
+}
+
+//===================================================================================
+void ResizeRedraw::initialize ()
+{   
+    WNDCLASSA rwc = {0};
+    
+    rwc.lpszClassName = RESIZE_REDRAW_CLASS;
+    rwc.hbrBackground = (HBRUSH)::GetStockObject(NULL_BRUSH); // transparent
+    rwc.lpfnWndProc = WindowsProc;
+	rwc.hCursor = ::LoadCursor(NULL, IDC_ARROW);
+    rwc.style = CS_HREDRAW | CS_VREDRAW;
+
+    ::RegisterClassA(&rwc); // If fails, it doesn't matter.
+
+    createBrushes();
+
+	HDC hdcScreen = ::GetDC(NULL);
+
+	RECT screenSize;
+	::SystemParametersInfoA(SPI_GETWORKAREA, 0, &screenSize, 0);
+	m_screenWidth = screenSize.right - screenSize.left;
+	m_screenHeight = screenSize.bottom - screenSize.top;
+	HBITMAP hDesktopBitmap = ::CreateCompatibleBitmap(hdcScreen, m_screenWidth, m_screenHeight);
+	m_hdcMemory = ::CreateCompatibleDC(hdcScreen);
+    ::SelectObject(m_hdcMemory, hDesktopBitmap);
+
+    ::BitBlt(m_hdcMemory, // Destination context
+             0,
+             0, 
+             m_screenWidth,
+             m_screenHeight,
+             hdcScreen, // Source context
+             0, // Source x to start from
+             0, // Source y to start from
+             SRCCOPY); // Copy
+
+	m_hwnd = ::CreateWindowExA(WS_EX_TOPMOST,
+							   RESIZE_REDRAW_CLASS,
+							   0, // no title
+							   WS_POPUP,
+							   0,
+							   0,
+							   m_screenWidth,
+							   m_screenHeight,
+							   NULL, // no parent window
+							   NULL, // no menu
+							   m_hInst,
+							   this);
+}
+
+//===================================================================================
+void ResizeRedraw::createBrushes ()
+{
+	m_backgroundBrush = createBrush(WINDOW_BACKGROUND_COLORREF);
+}
+
+//===================================================================================
+LRESULT ResizeRedraw::onCommand (WPARAM wParam, LPARAM lParam)
+{
+    return 0; 
+}
+
+//===================================================================================
+LRESULT ResizeRedraw::onClose (WPARAM wParam, LPARAM lParam)
+{
+    return ::DefWindowProc(m_hwnd, WM_CLOSE, wParam, lParam); 
+}
+
+//===================================================================================
+LRESULT ResizeRedraw::onCreate (WPARAM wParam, LPARAM lParam)
+{
+    return ::DefWindowProc(m_hwnd, WM_CREATE, wParam, lParam); 
+}
+
+//===================================================================================
+LRESULT ResizeRedraw::onMouseDown (WPARAM wParam, LPARAM lParam)
+{
+	int x = GET_X_LPARAM(lParam); 
+
+	if (x >= m_x && x < m_x + m_width)
+	{
+		int y = GET_Y_LPARAM(lParam);
+
+		if (y >= m_y && y < m_y + m_height)
+		{
+			m_prevMouseX = x;
+			m_prevMouseY = y;
+		}
+	} 
+
+    return 0; 
+}
+
+//===================================================================================
+LRESULT ResizeRedraw::onMouseUp (WPARAM wParam, LPARAM lParam)
+{
+	m_prevMouseX = -1;
+	m_prevMouseY = -1; 
+
+    return 0; 
+}
+
+//===================================================================================
+LRESULT ResizeRedraw::onMouseMove (WPARAM wParam, LPARAM lParam)
+{
+	if (wParam & MK_LBUTTON && m_prevMouseX >= 0)
+	{
+		int x = GET_X_LPARAM(lParam); 
+		int y = GET_Y_LPARAM(lParam);
+		int dx = x - m_prevMouseX;
+		int dy = y - m_prevMouseY;
+
+		RECT rect;
+		rect.left = min(m_x, m_x + dx);
+		rect.right = max(m_x, m_x + dx) + m_width;
+		rect.top = min(m_y, m_y + dy);
+		rect.bottom = max(m_y, m_y + dy) + m_height;
+		m_x += dx;
+		m_y += dy;
+		::InvalidateRect(m_hwnd, &rect, FALSE);
+		m_prevMouseX = x;
+		m_prevMouseY = y;
+	} 
+
+    return 0; 
+}
+
+//===================================================================================
+void ResizeRedraw::onMove (int dx, int dy)
+{
+    RECT rect;
+	rect.left = min(m_x, m_x + dx);
+	rect.right = max(m_x, m_x + dx) + m_width;
+	rect.top = min(m_y, m_y + dy);
+	rect.bottom = max(m_y, m_y + dy) + m_height;
+	::InvalidateRect(m_hwnd, &rect, FALSE);
+}
+
+//===================================================================================
+LRESULT ResizeRedraw::onEraseBackground (WPARAM wParam, LPARAM lParam)
+{
+	return 1;
+    //return ::DefWindowProc(m_hwnd, WM_ERASEBKGND, wParam, lParam); 
+}
+
+//===================================================================================
+LRESULT ResizeRedraw::onPaint (WPARAM wParam, LPARAM lParam)
+{
+	PAINTSTRUCT ps;
+    HDC hdc = ::BeginPaint(m_hwnd, &ps);
+	static HDC hdcMem = ::CreateCompatibleDC(hdc);
+	static HBITMAP hBitmap = ::CreateCompatibleBitmap(hdc, m_screenWidth, m_screenHeight);
+	::SelectObject(hdcMem, hBitmap);
+
+    ::BitBlt(hdcMem, // Destination context
+             0,
+             0, 
+             m_screenWidth,
+             m_screenHeight,
+             m_hdcMemory, // Source context
+             0, // Source x to start from
+             0, // Source y to start from
+             SRCCOPY); // Copy
+	RECT rect;
+	rect.left = m_x;
+	rect.right = rect.left + m_width;
+	rect.top = m_y;
+	rect.bottom = rect.top + m_height;
+	::FillRect(hdcMem, &rect, m_backgroundBrush);
+
+	::BitBlt(hdc, // Destination context
+             0,
+             0, 
+             m_screenWidth,
+             m_screenHeight,
+             hdcMem, // Source context
+             0, // Source x to start from
+             0, // Source y to start from
+             SRCCOPY); // Copy
+	//::DeleteDC(hdcMem);
+    
+    ::EndPaint(m_hwnd, &ps);
+    ::ReleaseDC(m_hwnd, hdc);
+    return 0;
+}
+
+//===================================================================================
+HPEN ResizeRedraw::createPen (COLORREF rgb, int width)
+{
+    HPEN hPen = ::CreatePen(PS_SOLID,
+                            width,
+                            rgb);
+
+    return hPen;
+}
+
+//===================================================================================
+HBRUSH ResizeRedraw::createBrush (COLORREF rgb)
+{
+    HBRUSH hBrush = ::CreateSolidBrush(rgb);
+
+    return hBrush;
+}
+
+//===================================================================================
+void ResizeRedraw::drawBitmap (HDC hdc,
+							   int x,
+							   int y,
+							   HBITMAP hBitmap,
+							   int srcX,
+							   int srcY,
+							   int width,
+							   int height)
+{
+    HDC hdcMem = ::CreateCompatibleDC(hdc);
+    ::SelectObject(hdcMem, hBitmap);
+
+    ::BitBlt(hdc, // Destination context
+             x,
+             y, 
+             width,
+             height,
+             hdcMem, // Source context
+             srcX, // Source x to start from
+             srcY, // Source y to start from
+             SRCCOPY); // Copy
+    ::DeleteDC(hdcMem);
+}
+
+//===================================================================================
+void ResizeRedraw::show ()
+{
+	::ShowWindow(m_hwnd, SW_SHOW);
+	::UpdateWindow(m_hwnd);
+}
+
+int APIENTRY WinMain (HINSTANCE hInstance,
+                      HINSTANCE hPrevInstance, 
+                      LPSTR lpCmdLine, 
+                      int nCmdShow)
+{
+    MSG msg;
+
+    lpCmdLine;
+    hPrevInstance;
+
+    ResizeRedraw resizeRedraw(hInstance, 200, 200, 200, 200);
+	resizeRedraw.show();
+
+    // Acquire and dispatch messages until a WM_QUIT message is received.
+    while (GetMessage(&msg, NULL, 0, 0))
     {
-        return ::CallNextHookEx(0, nCode, wParam, lParam);
+        TranslateMessage(&msg);  // Translates virtual key codes
+        DispatchMessage(&msg);   // Dispatches message to window
     }
 
-    if (nCode == HC_ACTION)
-    {
-		static RECT rect;
-		::GetWindowRect(hWndMask, &rect);
-
-        MOUSEHOOKSTRUCT* mouseHookInfo = (MOUSEHOOKSTRUCT*)lParam;
-
-        if (mouseHookInfo)
-        {
-            if (wParam == WM_MOUSEMOVE)
-            {
-                if (::PtInRect(&rect, mouseHookInfo->pt))
-                {
-					//::OutputDebugStringA("Mouse Move\n");
-					//::SetCursor(hSizeHorizCursor);
-					int xx = mouseHookInfo->pt.x;
-					width -= (xx - x);
-					int minX = min(x, xx);
-					int maxX = max(x, xx);
-					
-					rect.left = minX - WINDOW_CORNER_RADIUS;
-					rect.right = maxX + WINDOW_CORNER_RADIUS;
-					rect.top = 0;
-					rect.bottom = height;
-					
-					x = xx;
-
-					HDC hdc = ::GetDC(hWndMask);
-					::DeleteRgn(hRgnMask);
-					hRgnMask = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, x);
-					::ReleaseDC(hWndMask, hdc);
-					InitCaption(x, width);
-					
-					//std::stringstream str;
-					//str << "X = " << x << ", width = " << width << std::endl;
-					//::OutputDebugStringA(str.str().c_str());
-					::InvalidateRect(hWndMask, &rect, FALSE);
-
-					rect.right = x + width;
-					rect.bottom = CAPTION_HEIGHT;
-					::GetClientRect(hWndMask, &rect);
-					::InvalidateRect(hWndMask, &rect, FALSE);
-				}
-            }
-			else if (wParam == WM_LBUTTONUP)
-			{
-				InitCaption(0, width);
-				HDC hdc = ::GetDC(hWnd);
-				::DeleteRgn(hRgn);
-				hRgn = CreateRectTopTwoCornersRoundedRegion(hdc, WINDOW_CORNER_RADIUS, 0);
-				::ReleaseDC(hWnd, hdc);
-				::SetWindowRgn(hWnd, hRgn, TRUE);
-				::MoveWindow(hWnd, x, y, width, height, TRUE);
-				::UnhookWindowsHookEx(hMouseHook);
-				::SetCursor(hDefaultCursor);
-				resizing = false;
-				//::Sleep(500);
-				::ShowWindow(hWndMask, SW_HIDE);
-				::SetActiveWindow(hWnd);
-			}
-        }
-    }*/
-
-    return ::CallNextHookEx(0, nCode, wParam, lParam);
+    return (int)msg.wParam;  // Returns the value from PostQuitMessage
 }

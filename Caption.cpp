@@ -10,6 +10,7 @@ TRIVERTEX rightGradientDisabledVertices[2];
 
 int captionRed = 0, captionGreen = 0x4700, captionBlue = 0xAB00;
 int gradientRed = 0xD200, gradientGreen = 0xE600, gradientBlue = 0xFF00;
+HBRUSH hCaptionBrush = ::CreateSolidBrush(CAPTION_COLORREF);
 
 //===================================================================================
 void InitCaption (int startX, int width)
@@ -46,6 +47,7 @@ void InitCaption (int startX, int width)
 //===================================================================================
 void DrawCaption (HDC hdc, HBITMAP hBitmap)
 {
+
 	GRADIENT_RECT gradRect;
     gradRect.UpperLeft = 0;
     gradRect.LowerRight = 1;
